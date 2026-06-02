@@ -46,7 +46,7 @@ function App() {
     <main className="agenda">
       <section className="agenda-panel">
         <header className="agenda-header">
-          <h1>MI AGENDA ELECRONICA</h1>
+          <h2>MI AGENDA ELECRONICA_ 2026</h2>
           <p>Registra eventos y marca si fueron realizados.</p>
         </header>
 
