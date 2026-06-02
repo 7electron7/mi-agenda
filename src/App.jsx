@@ -1,11 +1,75 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
 import './App.css'
+import { supabase } from './supabase'
 
 function App() {
   const [title, setTitle] = useState('')
   const [events, setEvents] = useState([])
 
-  const handleSave = (event) => {
+  const cargarEventos = async () => {
+
+  const { data, error } = await supabase
+    .from('eventos')
+    .select('*')
+    .order('id', { ascending: false })
+
+  if (error) {
+    console.error(error)
+    return
+  }
+
+  const eventosFormateados = data.map((item) => ({
+    id: item.id,
+    title: item.titulo,
+    day: new Date(item.fecha_creacion).toLocaleDateString('es-CL'),
+    hour: new Date(item.fecha_creacion).toLocaleTimeString('es-CL', {
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+    completed: false,
+  }))
+
+  setEvents(eventosFormateados)
+}
+
+useEffect(() => {
+  cargarEventos()
+}, [])
+
+
+
+
+const eliminarEvento = async (id) => {
+
+  const confirmar = window.confirm(
+    '¿Está seguro de eliminar este evento?'
+  )
+
+  if (!confirmar) {
+    return
+  }
+
+  const { error } = await supabase
+    .from('eventos')
+    .delete()
+    .eq('id', id)
+
+  if (error) {
+    console.error(error)
+    alert('Error al eliminar el evento')
+    return
+  }
+
+  await cargarEventos()
+}
+
+
+
+
+
+  const handleSave = async (event) => {
+
     event.preventDefault()
 
     const eventTitle = title.trim()
@@ -13,6 +77,19 @@ function App() {
     if (!eventTitle) {
       return
     }
+    const { error } = await supabase
+  .from('eventos')
+  .insert([
+    {
+      titulo: eventTitle,
+    },
+  ])
+
+if (error) {
+  console.error(error)
+  return
+}
+    
 
     const scheduledAt = new Date()
 
@@ -30,6 +107,7 @@ function App() {
       ...currentEvents,
     ])
     setTitle('')
+    await cargarEventos()
   }
 
   const toggleCompleted = (eventId) => {
@@ -87,6 +165,12 @@ function App() {
                       Dia: {event.day} | Hora: {event.hour}
                     </span>
                   </div>
+                  <button
+                    onClick={() => eliminarEvento(event.id)}
+                  >
+                     Eliminar
+                  </button>
+
                 </li>
               ))}
             </ul>
