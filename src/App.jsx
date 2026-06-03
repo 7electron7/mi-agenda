@@ -5,7 +5,10 @@ import { supabase } from './supabase'
 
 function App() {
   const [title, setTitle] = useState('')
+  const [eventDate, setEventDate] = useState('')
+  const [eventTime, setEventTime] = useState('')
   const [events, setEvents] = useState([])
+  const [editingEventId, setEditingEventId] = useState(null)
 
   const cargarEventos = async () => {
 
@@ -19,16 +22,26 @@ function App() {
     return
   }
 
-  const eventosFormateados = data.map((item) => ({
-    id: item.id,
-    title: item.titulo,
-    day: new Date(item.fecha_creacion).toLocaleDateString('es-CL'),
-    hour: new Date(item.fecha_creacion).toLocaleTimeString('es-CL', {
-      hour: '2-digit',
-      minute: '2-digit',
-    }),
-    completed: false,
-  }))
+  const eventosFormateados = data.map((item) => {
+    const fechaCreacion = new Date(item.fecha_creacion)
+    const fechaEvento = item.fecha_evento || fechaCreacion.toISOString().slice(0, 10)
+    const horaEvento = item.hora_evento
+      ? item.hora_evento.slice(0, 5)
+      : fechaCreacion.toLocaleTimeString('es-CL', {
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+
+    return {
+      id: item.id,
+      title: item.titulo,
+      date: fechaEvento,
+      time: horaEvento,
+      day: new Date(`${fechaEvento}T00:00:00`).toLocaleDateString('es-CL'),
+      hour: horaEvento,
+      completed: item.estado === 'realizado',
+    }
+  })
 
   setEvents(eventosFormateados)
 }
@@ -74,14 +87,42 @@ const eliminarEvento = async (id) => {
 
     const eventTitle = title.trim()
 
-    if (!eventTitle) {
+    if (!eventTitle || !eventDate || !eventTime) {
       return
     }
+
+    if (editingEventId) {
+      const { error } = await supabase
+        .from('eventos')
+        .update({
+          titulo: eventTitle,
+          fecha_evento: eventDate,
+          hora_evento: eventTime,
+        })
+        .eq('id', editingEventId)
+
+      if (error) {
+        console.error(error)
+        alert('Error al editar el evento')
+        return
+      }
+
+      setTitle('')
+      setEventDate('')
+      setEventTime('')
+      setEditingEventId(null)
+      await cargarEventos()
+      return
+    }
+
     const { error } = await supabase
   .from('eventos')
   .insert([
     {
       titulo: eventTitle,
+      fecha_evento: eventDate,
+      hora_evento: eventTime,
+      estado: 'pendiente',
     },
   ])
 
@@ -97,27 +138,56 @@ if (error) {
       {
         id: scheduledAt.getTime(),
         title: eventTitle,
-        day: scheduledAt.toLocaleDateString('es-CL'),
-        hour: scheduledAt.toLocaleTimeString('es-CL', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
+        date: eventDate,
+        time: eventTime,
+        day: new Date(`${eventDate}T00:00:00`).toLocaleDateString('es-CL'),
+        hour: eventTime,
         completed: false,
       },
       ...currentEvents,
     ])
     setTitle('')
+    setEventDate('')
+    setEventTime('')
     await cargarEventos()
   }
 
-  const toggleCompleted = (eventId) => {
+  const editarEvento = (event) => {
+    setTitle(event.title)
+    setEventDate(event.date)
+    setEventTime(event.time)
+    setEditingEventId(event.id)
+  }
+
+  const cancelarEdicion = () => {
+    setTitle('')
+    setEventDate('')
+    setEventTime('')
+    setEditingEventId(null)
+  }
+
+  const toggleCompleted = async (eventToUpdate) => {
+    const nextCompleted = !eventToUpdate.completed
+    const nextStatus = nextCompleted ? 'realizado' : 'pendiente'
+
     setEvents((currentEvents) =>
       currentEvents.map((event) =>
-        event.id === eventId
-          ? { ...event, completed: !event.completed }
+        event.id === eventToUpdate.id
+          ? { ...event, completed: nextCompleted }
           : event,
       ),
     )
+
+    const { error } = await supabase
+      .from('eventos')
+      .update({ estado: nextStatus })
+      .eq('id', eventToUpdate.id)
+
+    if (error) {
+      console.error(error)
+      alert('Error al actualizar el estado del evento')
+      await cargarEventos()
+    }
   }
 
   return (
@@ -129,16 +199,44 @@ if (error) {
         </header>
 
         <form className="agenda-form" onSubmit={handleSave}>
-          <label htmlFor="event-title">Titulo</label>
           <div className="form-row">
-            <input
-              id="event-title"
-              type="text"
-              value={title}
-              placeholder="Escribe el titulo del evento"
-              onChange={(event) => setTitle(event.target.value)}
-            />
+            <label className="form-field" htmlFor="event-title">
+              Titulo
+              <input
+                id="event-title"
+                type="text"
+                value={title}
+                placeholder="Escribe el titulo del evento"
+                required
+                onChange={(event) => setTitle(event.target.value)}
+              />
+            </label>
+            <label className="form-field" htmlFor="event-date">
+              Fecha
+              <input
+                id="event-date"
+                type="date"
+                value={eventDate}
+                required
+                onChange={(event) => setEventDate(event.target.value)}
+              />
+            </label>
+            <label className="form-field" htmlFor="event-time">
+              Hora
+              <input
+                id="event-time"
+                type="time"
+                value={eventTime}
+                required
+                onChange={(event) => setEventTime(event.target.value)}
+              />
+            </label>
             <button type="submit">Guardar</button>
+            {editingEventId && (
+              <button type="button" onClick={cancelarEdicion}>
+                Cancelar
+              </button>
+            )}
           </div>
         </form>
 
@@ -155,7 +253,7 @@ if (error) {
                     <input
                       type="checkbox"
                       checked={event.completed}
-                      onChange={() => toggleCompleted(event.id)}
+                      onChange={() => toggleCompleted(event)}
                     />
                     <span>{event.completed ? 'Realizado' : 'Pendiente'}</span>
                   </label>
@@ -165,11 +263,20 @@ if (error) {
                       Dia: {event.day} | Hora: {event.hour}
                     </span>
                   </div>
-                  <button
-                    onClick={() => eliminarEvento(event.id)}
-                  >
-                     Eliminar
-                  </button>
+                  <div className="event-actions">
+                    <button
+                      type="button"
+                      onClick={() => editarEvento(event)}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => eliminarEvento(event.id)}
+                    >
+                       Eliminar
+                    </button>
+                  </div>
 
                 </li>
               ))}
